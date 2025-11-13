@@ -1,0 +1,255 @@
+<!-- #templates/measurements/doctor_dashboard.html -->
+{% extends "base.html" %}
+{% block title %}Doctor Dashboard{% endblock %}
+
+{% block content %}
+<h2 class="text-3xl font-bold mb-6 text-gray-800 text-center md:text-left">Doctor Dashboard</h2>
+
+<div class="bg-white p-4 md:p-6 rounded-2xl shadow-md border overflow-x-auto">
+  <h3 class="text-xl font-semibold mb-4 text-gray-700">My Assigned Patients</h3>
+  
+  <div class="min-w-full">
+    <table class="w-full text-left border-collapse">
+      <thead class="bg-gray-100 text-gray-700 text-sm md:text-base">
+        <tr>
+          <th class="p-3 whitespace-nowrap">Patient</th>
+          <th class="p-3 whitespace-nowrap">Phone</th>
+          <th class="p-3 whitespace-nowrap">HR</th>
+          <th class="p-3 whitespace-nowrap">SpO₂</th>
+          <th class="p-3 whitespace-nowrap">Condition</th>
+          <th class="p-3 whitespace-nowrap">Last Seen</th>
+          <th class="p-3 text-center whitespace-nowrap">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in patients %}
+        <tr class="border-b hover:bg-gray-50 transition text-sm md:text-base">
+          <td class="p-3 font-medium">{{ p.full_name }}</td>
+          <td class="p-3">{{ p.phone }}</td>
+          <td class="p-3">
+            {% if p.latest_hr %}
+              <span class="{% if p.latest_hr > 120 %}text-red-600{% elif p.latest_hr < 50 %}text-yellow-600{% else %}text-green-600{% endif %} font-semibold">
+                {{ p.latest_hr }}
+              </span>
+            {% else %}--{% endif %}
+          </td>
+          <td class="p-3">
+            {% if p.latest_spo2 %}
+              <span class="{% if p.latest_spo2 < 92 %}text-red-600{% elif p.latest_spo2 < 95 %}text-yellow-600{% else %}text-green-600{% endif %} font-semibold">
+                {{ p.latest_spo2 }}%
+              </span>
+            {% else %}--{% endif %}
+          </td>
+          <td class="p-3">
+            {% if p.condition == "Stable" %}
+              <span class="text-green-600 font-semibold">Stable</span>
+            {% elif "Low" in p.condition %}
+              <span class="text-yellow-600 font-semibold">{{ p.condition }}</span>
+            {% else %}
+              <span class="text-red-600 font-semibold">{{ p.condition }}</span>
+            {% endif %}
+          </td>
+       <td class="p-3 text-gray-500 text-sm md:text-base">
+    {% if p.last_seen %}
+        {{ p.last_seen.date }} at {{ p.last_seen.time }}
+    {% else %}
+        --
+    {% endif %}
+</td>
+          <td class="p-3 text-center flex flex-wrap justify-center gap-2 md:gap-3">
+            <button onclick="viewPatient('{{ p.user_id }}','{{ p.full_name }}')" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow w-24 md:w-auto">
+              View
+            </button>
+            {% if p.phone %}
+            <a href="tel:{{ p.phone }}" 
+               class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg shadow w-24 md:w-auto text-center">
+               Call
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center py-6 text-gray-500">No patients assigned yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Patient Details Modal -->
+<div id="patientModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+  <div class="bg-white p-4 md:p-6 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-xl transform transition-all">
+    <h3 id="patientName" class="text-2xl font-bold mb-4 text-gray-800 text-center md:text-left"></h3>
+
+    <div class="w-full overflow-x-auto mb-4">
+      <canvas id="docChart" class="w-full max-w-full h-64 sm:h-72 md:h-80"></canvas>
+    </div>
+
+    <div id="summaryBox" class="bg-gray-50 p-3 rounded-lg border mb-4 text-sm md:text-base"></div>
+    <div id="symptomList" class="bg-gray-50 p-3 rounded-lg border text-sm md:text-base"></div>
+
+    <div class="flex justify-center md:justify-end mt-6">
+      <button onclick="closeModal()" 
+              class="px-5 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium text-sm md:text-base">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function viewPatient(userId, name) {
+  const modal = document.getElementById('patientModal');
+  const ctx = document.getElementById('docChart').getContext('2d');
+  document.getElementById('patientName').textContent = name;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  Promise.all([
+    fetch(`/api/patient/measurements/?patient_id=${userId}`).then(r=>r.json()),
+    fetch(`/api/patient/symptoms/?patient_id=${userId}`).then(r=>r.json())
+  ])
+  .then(([meas, symptoms]) => {
+    if (!meas.length) {
+      document.getElementById('summaryBox').innerHTML = "<p>No measurement data available.</p>";
+      document.getElementById('symptomList').innerHTML = "<p>No symptoms submitted.</p>";
+      return;
+    }
+
+    const latest = meas[0];
+    const avgHr = Math.round(meas.reduce((a,b)=>a+(b.heart_rate||0),0)/meas.length);
+    const avgSpo2 = Math.round(meas.reduce((a,b)=>a+(b.spo2||0),0)/meas.length);
+
+    document.getElementById('summaryBox').innerHTML = `
+      <h4 class='font-semibold mb-2'>Summary</h4>
+      <p>Average HR: <b>${avgHr}</b> bpm</p>
+      <p>Average SpO₂: <b>${avgSpo2}%</b></p>
+      <p>Last Recorded: ${new Date(latest.timestamp).toLocaleString()}</p>
+    `;
+
+    const labels = meas.slice().reverse().map(d => new Date(d.timestamp).toLocaleString());
+    const hr = meas.slice().reverse().map(d => d.heart_rate);
+    const spo2 = meas.slice().reverse().map(d => d.spo2);
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Heart Rate', data: hr, borderColor: 'red', tension: 0.3, fill: false },
+          { label: 'SpO₂', data: spo2, borderColor: 'green', tension: 0.3, fill: false }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+
+    let html = "<h4 class='font-semibold mb-2'>Recent Symptoms</h4><ul class='list-disc pl-5'>";
+    if (!symptoms.length) html += "<li>No symptoms submitted</li>";
+    symptoms.forEach(s => {
+      html += `<li>${s.symptom_type} (${new Date(s.created_at).toLocaleString()})</li>`;
+    });
+    html += "</ul>";
+    document.getElementById('symptomList').innerHTML = html;
+  });
+}
+
+function closeModal() {
+  document.getElementById('patientModal').classList.add('hidden');
+}
+</script>
+
+<script>
+function viewPatient(userId, name) {
+  const modal = document.getElementById('patientModal');
+  const ctx = document.getElementById('docChart').getContext('2d');
+  document.getElementById('patientName').textContent = name;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  Promise.all([
+    fetch(`/api/patient/measurements/?patient_id=${userId}`).then(r=>r.json()),
+    fetch(`/api/patient/symptoms/?patient_id=${userId}`).then(r=>r.json())
+  ])
+  .then(([meas, symptoms]) => {
+    if (!meas.length) {
+      document.getElementById('summaryBox').innerHTML = "<p>No measurement data available.</p>";
+      document.getElementById('symptomList').innerHTML = "<p>No symptoms submitted.</p>";
+      return;
+    }
+
+    const latest = meas[0];
+    const avgHr = Math.round(meas.reduce((a,b)=>a+(b.heart_rate||0),0)/meas.length);
+    const avgSpo2 = Math.round(meas.reduce((a,b)=>a+(b.spo2||0),0)/meas.length);
+    const avgSystolic = Math.round(meas.reduce((a,b)=>a+(b.systolic_bp||0),0)/meas.length);
+    const avgDiastolic = Math.round(meas.reduce((a,b)=>a+(b.diastolic_bp||0),0)/meas.length);
+    const formatDate = (timestamp) => {
+  const date = new Date(timestamp);
+  return `${date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })} on ${date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })}`;
+};
+
+    document.getElementById('summaryBox').innerHTML = `
+      <h4 class='font-semibold mb-2'>Summary</h4>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <p>Average HR: <b>${avgHr}</b> bpm</p>
+          <p>Average SpO₂: <b>${avgSpo2}%</b></p>
+        </div>
+        <div>
+          <p>Average BP: <b>${avgSystolic}/${avgDiastolic}</b></p>
+          <p>BP Category: <b>${latest.bp_category || 'N/A'}</b></p>
+        </div>
+      </div>
+       <p class="mt-2">Last Recorded: ${formatDate(latest.timestamp)}</p>
+    `;
+
+    const labels = meas.slice().reverse().map(d => new Date(d.timestamp).toLocaleString());
+    const hr = meas.slice().reverse().map(d => d.heart_rate);
+    const spo2 = meas.slice().reverse().map(d => d.spo2);
+    const systolic = meas.slice().reverse().map(d => d.systolic_bp);
+    const diastolic = meas.slice().reverse().map(d => d.diastolic_bp);
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Heart Rate', data: hr, borderColor: 'red', tension: 0.3, fill: false },
+          { label: 'SpO₂', data: spo2, borderColor: 'green', tension: 0.3, fill: false },
+          { label: 'Systolic BP', data: systolic, borderColor: 'purple', tension: 0.3, fill: false },
+          { label: 'Diastolic BP', data: diastolic, borderColor: 'blue', tension: 0.3, fill: false }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+
+    let html = "<h4 class='font-semibold mb-2'>Recent Symptoms</h4><ul class='list-disc pl-5'>";
+    if (!symptoms.length) html += "<li>No symptoms submitted</li>";
+    symptoms.forEach(s => {
+      html += `<li>${s.symptom_type} (${formatDate(s.created_at)})</li>`;
+    });
+    html += "</ul>";
+    document.getElementById('symptomList').innerHTML = html;
+  });
+}
+</script>
+{% endblock %}

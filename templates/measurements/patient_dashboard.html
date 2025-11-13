@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block title %}Patient Dashboard{% endblock %}
+{% block content %}
+
+{% if messages %}
+<div class="fixed top-4 right-4 z-50">
+    {% for message in messages %}
+    <div class="{% if message.tags == 'error' %}bg-red-100 border-red-400 text-red-700{% else %}bg-green-100 border-green-400 text-green-700{% endif %} px-4 py-3 rounded relative mb-2" role="alert">
+        <span class="block sm:inline">{{ message }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+<!-- <div class="hidden">
+    Debug Info:
+    User ID: {{ user.id }}
+    Profile User ID: {{ profile.user.id }}
+</div> -->
+<!-- Health Stats Overview -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <!-- Vitals -->
+  <div class="md:col-span-2 bg-white p-4 rounded-2xl shadow-sm">
+    <h5>ID-{{ profile.user.id }}</h5>
+    <h2 class="text-xl font-bold mb-3">Latest Vitals </span></h2>
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <!-- Heart Rate -->
+      <div class="p-3 rounded-xl border text-center">
+        <div class="text-3xl font-bold text-red-600" id="hrVal">{{ latest.heart_rate|default:"--" }}</div>
+        <p class="text-sm text-gray-500">Heart Rate</p>
+      </div>
+      <!-- SpO2 -->
+      <div class="p-3 rounded-xl border text-center">
+        <div class="text-3xl font-bold text-green-600" id="spo2Val">{{ latest.spo2|default:"--" }}</div>
+        <p class="text-sm text-gray-500">SpO₂</p>
+      </div>
+      <!-- Temperature -->
+      <div class="p-3 rounded-xl border text-center">
+        <div class="text-3xl font-bold text-blue-600" id="tempVal">{{ latest.temperature|default:"--" }}</div>
+        <p class="text-sm text-gray-500">Temperature</p>
+      </div>
+      <!-- Blood Pressure -->
+      <div class="p-3 rounded-xl border text-center">
+        <div class="text-3xl font-bold text-purple-600" id="bpVal">
+          {% if latest.systolic_bp and latest.diastolic_bp %}
+            {{ latest.systolic_bp }}/{{ latest.diastolic_bp }}
+          {% else %}
+            --
+          {% endif %}
+        </div>
+        <p class="text-sm text-gray-500">Blood Pressure</p>
+      </div>
+      <!-- BP Category -->
+      <div class="p-3 rounded-xl border text-center">
+        <div class="text-xl font-bold 
+          {% if latest.bp_category == 'Normal' %}text-green-600
+          {% elif latest.bp_category == 'Elevated' %}text-yellow-600
+          {% else %}text-red-600{% endif %}" id="bpCatVal">
+          {{ latest.bp_category|default:"--" }}
+        </div>
+        <p class="text-sm text-gray-500">BP Category</p>
+      </div>
+    </div>
+
+    <!-- Recommendations Section -->
+    <div class="mt-6 space-y-4">
+      <div>
+        <h3 class="font-semibold text-lg mb-1">Health Alerts & Recommendations</h3>
+        <ul id="recs" class="list-disc pl-5 space-y-1 text-gray-700">
+          {% for tip in recommendations %}
+            <li>{{ tip }}</li>
+          {% empty %}
+            <li>No current recommendations</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <!-- Health Trends Chart -->
+    <div class="mt-6">
+      <h3 class="font-semibold text-lg mb-2">Health Trends</h3>
+      <div class="overflow-x-auto">
+        <canvas id="vitalsChart" class="w-full max-w-full" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menstrual Tracking (Female Only) -->
+<!-- Replace the existing menstrual section with this -->
+{% if show_menstrual %}
+<div class="bg-white p-4 rounded-2xl shadow-sm">
+    <h3 class="font-semibold mb-3">Menstrual Cycle Tracking</h3>
+    <div class="space-y-4">
+        <!-- Current Cycle Info -->
+        {% if menstrual_data %}
+            {% with latest_cycle=menstrual_data.0 %}
+            <div class="p-3 bg-pink-50 rounded-lg">
+                <p class="font-medium">Current Cycle</p>
+                <p class="text-sm">Started: {{ latest_cycle.start_date|date:"M d, Y" }}</p>
+                <p class="text-sm">Flow: {{ latest_cycle.flow_intensity }}</p>
+                <p class="text-sm">Pain Level: {{ latest_cycle.pain_level }}/10</p>
+            </div>
+            {% endwith %}
+        {% else %}
+            <p class="text-gray-600">No menstrual data recorded yet.</p>
+        {% endif %}
+        
+        <button onclick="openMenstrualModal()" 
+                class="w-full bg-pink-600 hover:bg-pink-700 text-white px-3 py-2 rounded-lg transition">
+            Record Menstrual Data
+        </button>
+    </div>
+</div>
+{% endif %}
+
+  <!-- Calendar & Symptoms -->
+  <div class="bg-white p-4 rounded-2xl shadow-sm">
+    <h3 class="font-semibold mb-3">Health Calendar</h3>
+    <div id="calendar" class="mb-4"></div>
+    <button onclick="openModal()" 
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition">
+      Record Symptom
+    </button>
+  </div>
+</div>
+
+<!-- Recent Activity Timeline -->
+<div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+  <!-- Recent Symptoms -->
+  <div class="bg-white p-4 rounded-2xl shadow-sm">
+    <h4 class="font-semibold mb-2">Recent Symptoms</h4>
+    <ul class="list-disc pl-5 text-gray-700">
+      {% for s in profile.symptoms.all|slice:":10" %}
+        <li>
+          {{ s.get_symptom_type_display }} 
+          {% if s.severity %}(Severity: {{ s.severity }}/10){% endif %}
+          <small class="text-gray-500">- {{ s.created_at|date:"M d, H:i" }}</small>
+        </li>
+      {% empty %}
+        <li>No symptoms recorded</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- Latest Tips -->
+  <div class="bg-white p-4 rounded-2xl shadow-sm">
+    <h4 class="font-semibold mb-2">Health Tips</h4>
+    {% for tip in profile.tooltips.all|slice:":3" %}
+      <div class="mb-3 p-3 bg-yellow-50 rounded-lg">
+        <p class="text-sm">{{ tip.message }}</p>
+        <small class="text-gray-500">{{ tip.created_at|date:"M d, H:i" }}</small>
+      </div>
+    {% empty %}
+      <p class="text-gray-600">No health tips yet</p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Symptom Modal -->
+<div id="symptomModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white p-6 rounded-xl w-11/12 sm:w-96 shadow-xl">
+    <h3 class="font-bold mb-3 text-lg">Record Symptom</h3>
+    <form method="post" action="{% url 'submit-symptom' %}">
+      {% csrf_token %}
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Symptom Type</label>
+          <select name="symptom_type" required class="mt-1 w-full p-2 border rounded">
+            <option value="">-- Select Symptom --</option>
+            <option value="fever">Fever</option>
+            <option value="headache">Headache</option>
+            <option value="fatigue">Fatigue</option>
+            <option value="chest_pain">Chest Pain</option>
+            <option value="dizziness">Dizziness</option>
+            <option value="shortness_of_breath">Shortness of Breath</option>
+            {% if profile.gender == 'F' %}
+              <option value="heavy_bleeding">Heavy Menstrual Bleeding</option>
+              <option value="pelvic_pain">Pelvic Pain</option>
+              <option value="irregular_periods">Irregular Periods</option>
+            {% endif %}
+          </select>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Severity (1-10)</label>
+          <input type="number" name="severity" min="1" max="10" 
+                 class="mt-1 w-full p-2 border rounded" required>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Notes</label>
+          <textarea name="notes" rows="2" 
+                    class="mt-1 w-full p-2 border rounded"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-4 flex justify-end space-x-2">
+        <button type="button" onclick="closeModal()" 
+                class="px-4 py-2 border rounded hover:bg-gray-50">
+          Cancel
+        </button>
+        <button type="submit" 
+                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+          Submit
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Menstrual Cycle Modal -->
+{% if profile.gender == 'F' %}
+<div id="menstrualModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white p-6 rounded-xl w-11/12 sm:w-96 shadow-xl">
+    <h3 class="font-bold mb-3 text-lg">Record Menstrual Cycle</h3>
+    <form method="post" action="{% url 'record-menstrual' %}">
+      {% csrf_token %}
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Start Date</label>
+          <input type="date" name="start_date" required 
+                 class="mt-1 w-full p-2 border rounded">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Flow Intensity</label>
+          <select name="flow_intensity" required class="mt-1 w-full p-2 border rounded">
+            <option value="light">Light</option>
+            <option value="moderate">Moderate</option>
+            <option value="heavy">Heavy</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Pain Level (0-10)</label>
+          <input type="number" name="pain_level" min="0" max="10" 
+                 class="mt-1 w-full p-2 border rounded" required>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Notes</label>
+          <textarea name="notes" rows="2" 
+                    class="mt-1 w-full p-2 border rounded"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-4 flex justify-end space-x-2">
+        <button type="button" onclick="closeMenstrualModal()" 
+                class="px-4 py-2 border rounded hover:bg-gray-50">
+          Cancel
+        </button>
+        <button type="submit" 
+                class="px-4 py-2 bg-pink-600 text-white rounded hover:bg-pink-700">
+          Submit
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // Initialize Calendar
+  const calendarEl = document.getElementById('calendar');
+  const calendar = new FullCalendar.Calendar(calendarEl, {
+    initialView: 'dayGridMonth',
+    events: [
+      {% if profile.gender == 'F' %}
+        {% for cycle in menstrual_data %}
+          {
+            title: 'Period',
+            start: '{{ cycle.start_date|date:"Y-m-d" }}',
+            {% if cycle.end_date %}end: '{{ cycle.end_date|date:"Y-m-d" }}',{% endif %}
+            color: '#EC4899'
+          },
+        {% endfor %}
+      {% endif %}
+      {% for symptom in recent_symptoms %}
+        {
+          title: '{{ symptom.get_symptom_type_display }}',
+          start: '{{ symptom.created_at|date:"Y-m-d" }}',
+          color: '#2563EB'
+        },
+      {% endfor %}
+    ]
+  });
+  calendar.render();
+
+  // Initialize Health Trends Chart
+  fetch('/api/patient/measurements/')
+    .then(r => r.json())
+    .then(data => {
+      const labels = data.slice().reverse().map(d => new Date(d.timestamp).toLocaleString());
+      const hr = data.slice().reverse().map(d => d.heart_rate);
+      const spo2 = data.slice().reverse().map(d => d.spo2);
+      const systolic = data.slice().reverse().map(d => d.systolic_bp);
+      const diastolic = data.slice().reverse().map(d => d.diastolic_bp);
+
+      const ctx = document.getElementById('vitalsChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {label: 'Heart Rate', data: hr, borderColor: 'red', fill: false},
+            {label: 'SpO₂', data: spo2, borderColor: 'green', fill: false},
+            {label: 'Systolic BP', data: systolic, borderColor: 'purple', fill: false},
+            {label: 'Diastolic BP', data: diastolic, borderColor: 'blue', fill: false}
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    });
+});
+// ...existing code...
+document.querySelectorAll('form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+        if (this.querySelector('input[type="date"]')) {
+            // Set default date if not selected
+            const dateInput = this.querySelector('input[type="date"]');
+            if (!dateInput.value) {
+                dateInput.valueAsDate = new Date();
+            }
+        }
+    });
+});
+// Modal Functions
+function openModal() {
+  document.getElementById('symptomModal').classList.remove('hidden');
+  document.getElementById('symptomModal').classList.add('flex');
+}
+
+function closeModal() {
+  document.getElementById('symptomModal').classList.remove('flex');
+  document.getElementById('symptomModal').classList.add('hidden');
+}
+
+function closeMenstrualModal() {
+    const modal = document.getElementById('menstrualModal');
+    if (modal) {
+        modal.classList.remove('flex');
+        modal.classList.add('hidden');
+        // Reset form
+        modal.querySelector('form')?.reset();
+    }
+}
+
+function openMenstrualModal() {
+    const modal = document.getElementById('menstrualModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        // Set default date to today
+        const dateInput = modal.querySelector('input[type="date"]');
+        if (dateInput) {
+            dateInput.valueAsDate = new Date();
+        }
+    }
+}
+</script>
+{% endblock %}
