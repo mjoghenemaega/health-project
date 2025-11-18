@@ -29,10 +29,16 @@ def register_doctor(request):
         if form.is_valid():
             user = form.save()
             login(request, user)
+            messages.success(request, "Doctor account created successfully!")
             return redirect("doctor-dashboard")
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"{field}: {error}")
     else:
         form = DoctorSignUpForm()
     return render(request, "users/register_doctor.html", {"form": form})
+
 
 def user_login(request):
     if request.method == "POST":
