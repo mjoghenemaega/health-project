@@ -165,7 +165,7 @@ function closeModal() {
   document.getElementById('patientModal').classList.add('hidden');
 }
 </script>
-
+<!-- 
 <script>
 function viewPatient(userId, name) {
   const modal = document.getElementById('patientModal');
@@ -242,6 +242,27 @@ function viewPatient(userId, name) {
       }
     });
 
+
+        // Menstrual Data (if available)
+    let menstrualHtml = "<h4 class='font-semibold mb-2'>Menstrual Cycle History</h4>";
+    if (menstrual && menstrual.length > 0) {
+      menstrualHtml += "<ul class='list-disc pl-5 space-y-1'>";
+      menstrual.slice(0, 5).forEach(m => {
+        const startDate = new Date(m.start_date).toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: '2-digit'});
+        const endDate = m.end_date ? new Date(m.end_date).toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: '2-digit'}) : 'Ongoing';
+        const days = m.end_date ? Math.round((new Date(m.end_date) - new Date(m.start_date)) / (1000 * 60 * 60 * 24)) : '--';
+        menstrualHtml += `
+          <li class='text-xs md:text-sm'>
+            <span class='font-medium'>${startDate} to ${endDate}</span> 
+            (${days} days) | Flow: ${m.flow_intensity} | Pain: ${m.pain_level}/10
+          </li>
+        `;
+      });
+      menstrualHtml += "</ul>";
+    } else {
+      menstrualHtml += "<p class='text-gray-500 text-sm'>No menstrual data recorded</p>";
+    }
+
     let html = "<h4 class='font-semibold mb-2'>Recent Symptoms</h4><ul class='list-disc pl-5'>";
     if (!symptoms.length) html += "<li>No symptoms submitted</li>";
     symptoms.forEach(s => {
@@ -250,6 +271,129 @@ function viewPatient(userId, name) {
     html += "</ul>";
     document.getElementById('symptomList').innerHTML = html;
   });
+}
+</script> -->
+
+<script>
+let chartInstance = null; // Add this at the top of the script block
+
+function viewPatient(userId, name) {
+  const modal = document.getElementById('patientModal');
+  const ctx = document.getElementById('docChart').getContext('2d');
+  document.getElementById('patientName').textContent = name;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  // Destroy previous chart if it exists
+  if (chartInstance) {
+    chartInstance.destroy();
+  }
+
+  Promise.all([
+    fetch(`/api/patient/measurements/?patient_id=${userId}`).then(r=>r.json()),
+    fetch(`/api/patient/symptoms/?patient_id=${userId}`).then(r=>r.json()),
+    fetch(`/api/patient/menstrual/?patient_id=${userId}`).then(r=>r.json().catch(() => []))
+  ])
+  .then(([meas, symptoms, menstrual]) => {
+    if (!meas.length) {
+      document.getElementById('summaryBox').innerHTML = "<p>No measurement data available.</p>";
+      document.getElementById('symptomList').innerHTML = "<p>No symptoms submitted.</p>";
+      return;
+    }
+
+    const latest = meas[0];
+    const avgHr = Math.round(meas.reduce((a,b)=>a+(b.heart_rate||0),0)/meas.length);
+    const avgSpo2 = Math.round(meas.reduce((a,b)=>a+(b.spo2||0),0)/meas.length);
+    const avgSystolic = Math.round(meas.reduce((a,b)=>a+(b.systolic_bp||0),0)/meas.length);
+    const avgDiastolic = Math.round(meas.reduce((a,b)=>a+(b.diastolic_bp||0),0)/meas.length);
+    
+    const formatDate = (timestamp) => {
+      const date = new Date(timestamp);
+      return `${date.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      })} at ${date.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })}`;
+    };
+
+    document.getElementById('summaryBox').innerHTML = `
+      <h4 class='font-semibold mb-2'>Summary</h4>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <p>Average HR: <b>${avgHr}</b> bpm</p>
+          <p>Average SpO₂: <b>${avgSpo2}%</b></p>
+        </div>
+        <div>
+          <p>Average BP: <b>${avgSystolic}/${avgDiastolic}</b></p>
+          <p>BP Category: <b>${latest.bp_category || 'N/A'}</b></p>
+        </div>
+      </div>
+      <p class="mt-2">Last Recorded: ${formatDate(latest.timestamp)}</p>
+    `;
+
+    // Menstrual Data (if available)
+    let menstrualHtml = "<h4 class='font-semibold mb-2'>Menstrual Cycle History</h4>";
+    if (menstrual && menstrual.length > 0) {
+      menstrualHtml += "<ul class='list-disc pl-5 space-y-1'>";
+      menstrual.slice(0, 5).forEach(m => {
+        const startDate = new Date(m.start_date).toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: '2-digit'});
+        const endDate = m.end_date ? new Date(m.end_date).toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: '2-digit'}) : 'Ongoing';
+        const days = m.end_date ? Math.round((new Date(m.end_date) - new Date(m.start_date)) / (1000 * 60 * 60 * 24)) : '--';
+        menstrualHtml += `
+          <li class='text-xs md:text-sm'>
+            <span class='font-medium'>${startDate} to ${endDate}</span> 
+            (${days} days) | Flow: ${m.flow_intensity} | Pain: ${m.pain_level}/10
+          </li>
+        `;
+      });
+      menstrualHtml += "</ul>";
+    } else {
+      menstrualHtml += "<p class='text-gray-500 text-sm'>No menstrual data recorded</p>";
+    }
+
+    // Symptoms
+    let symptomHtml = "<h4 class='font-semibold mb-2'>Recent Symptoms</h4><ul class='list-disc pl-5 space-y-1'>";
+    if (!symptoms.length) symptomHtml += "<li>No symptoms submitted</li>";
+    symptoms.slice(0, 8).forEach(s => {
+      symptomHtml += `<li class='text-xs md:text-sm'><span class='font-medium'>${s.symptom_type}</span> (${formatDate(s.created_at)})</li>`;
+    });
+    symptomHtml += "</ul>";
+
+    document.getElementById('symptomList').innerHTML = menstrualHtml + "<hr class='my-3'>" + symptomHtml;
+
+    const labels = meas.slice().reverse().map(d => new Date(d.timestamp).toLocaleString());
+    const hr = meas.slice().reverse().map(d => d.heart_rate);
+    const spo2 = meas.slice().reverse().map(d => d.spo2);
+    const systolic = meas.slice().reverse().map(d => d.systolic_bp);
+    const diastolic = meas.slice().reverse().map(d => d.diastolic_bp);
+
+    // Create new chart and store reference
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Heart Rate', data: hr, borderColor: 'red', tension: 0.3, fill: false },
+          { label: 'SpO₂', data: spo2, borderColor: 'green', tension: 0.3, fill: false },
+          { label: 'Systolic BP', data: systolic, borderColor: 'purple', tension: 0.3, fill: false },
+          { label: 'Diastolic BP', data: diastolic, borderColor: 'blue', tension: 0.3, fill: false }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  });
+}
+
+function closeModal() {
+  document.getElementById('patientModal').classList.add('hidden');
 }
 </script>
 {% endblock %}

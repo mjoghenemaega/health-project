@@ -359,3 +359,32 @@ def record_menstrual_cycle(request):
     except Exception as e:
         messages.error(request, f"Error recording menstrual data: {str(e)}")
         return redirect("patient-dashboard")
+    
+
+
+
+@login_required
+def patient_menstrual_json(request):
+    if request.user.is_doctor:
+        pid = request.GET.get("patient_id")
+        if not pid:
+            return JsonResponse({"error": "patient_id required"}, status=400)
+        try:
+            profile = PatientProfile.objects.get(user__id=pid, assigned_doctor=request.user)
+        except PatientProfile.DoesNotExist:
+            return JsonResponse({"error": "not found"}, status=404)
+    else:
+        profile = PatientProfile.objects.filter(user=request.user).first()
+    
+    if not profile:
+        return JsonResponse([], safe=False)
+    
+    qs = profile.menstrual_cycles.all().order_by('-start_date')[:10]
+    data = [{
+        "start_date": m.start_date.isoformat() if m.start_date else None,
+        "end_date": m.end_date.isoformat() if m.end_date else None,
+        "flow_intensity": m.flow_intensity,
+        "pain_level": m.pain_level,
+        "notes": m.notes
+    } for m in qs]
+    return JsonResponse(data, safe=False)

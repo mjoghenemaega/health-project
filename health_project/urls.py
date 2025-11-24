@@ -21,5 +21,6 @@ urlpatterns = [
     path("api/doctor/patients/", meas_views.doctor_patients_json, name="api-doctor-patients"),
     path("api/patient/symptoms/", meas_views.patient_symptoms_json, name="patient-symptoms-json"),
     path('patient/menstrual/record/', meas_views.record_menstrual_cycle, name='record-menstrual'),  # Add this line
-
+# urls.py
+   path('api/patient/menstrual/', meas_views.patient_menstrual_json, name='patient_menstrual_json'),
 ]
