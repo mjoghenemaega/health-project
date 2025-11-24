@@ -344,7 +344,7 @@ function viewPatient(userId, name) {
         const days = m.end_date ? Math.round((new Date(m.end_date) - new Date(m.start_date)) / (1000 * 60 * 60 * 24)) : '--';
         menstrualHtml += `
           <li class='text-xs md:text-sm'>
-            <span class='font-medium'>${startDate} to ${endDate}</span> 
+            <span class='font-medium'>${startDate} </span> 
             (${days} days) | Flow: ${m.flow_intensity} | Pain: ${m.pain_level}/10
           </li>
         `;
